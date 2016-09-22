@@ -9,3 +9,5 @@ navbar:
       href: about.html
     - text: "outra"
       href: outra.html
+    - text: "Exemplo mapa interativo"
+      href: mapas_com_leaflet_em_R.html

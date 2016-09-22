@@ -1,0 +1,183 @@
+---
+title: "Trabalhando com mapas interativos via leaflet R"
+author: "Wesley J. Silva"
+date: "25 de agosto de 2016"
+output: 
+  html_document: 
+    keep_md: yes
+---
+
+```{r, include = F,eval = T}
+execute_all = F
+```
+
+
+# Contexto
+
+Vimos, em [nota anterior](https://rpubs.com/wesleysilva88/ex_ggplot2), como fabricar mapas estáticos usando o pacote *ggplot2*. O objetivo, agora, era criar mapas interativos em [aplicativos shiny](http://shiny.rstudio.com/). 
+
+Felizmente, uma solução fantástica, recentemente criada, já está dispinível no [CRAN](https://cran.r-project.org/mirrors.html). Trata-se do [pacote **leflet**](http://nbcgib.uesc.br/mirrors/cran/).
+
+O pacote utiliza o [*Leaflet*](http://leafletjs.com/), uma solução *opensource* em JavaScript que permite melhor interação com mapas
+
+
+# Sobre este tutorial
+
+Um tutorial *bastante* completo sobre o leaflet-R está disponível [aqui](https://rstudio.github.io/leaflet/map_widget.html). Este tutorial foi contruído com o intuido de mostrar a funcionalidade, e para fins de registro pessoal, também.
+
+Os dados para exemplificar a construção dos mapas seguem [neste link](https://gitlab.com/Wjsilva/exemplos_r/raw/previa/dados/c10_sudeste.zip). Mas, não se preocupe em baixar manualmente. Ao longo da exposição, haverá códigos que reaizarão esse trabalho.
+
+Os exemplos vão ser expostos para que você possa reproduzí-los passo-a-passo e ver as camadas sendo acrescentadas. No entanto, apenas o resultado final, com um ou outro intermediários, serão mostrados aqui.
+
+
+# Variáveis globais e pacotes
+
+Vamos utilizar os pacotes que estão sendo carregados abaixo. Caso não tenha a última versão destes, descomente a linha final do *chunck* abaixo e execute a linha de comando.
+
+```{r, message = FALSE, results = "hide",eval = T}
+library(rgdal)   # para carregar o shape
+library(leaflet) # é o tema do artigo...
+library(dplyr)   # para usar o operador "%>%"
+```
+
+
+# Obtenção e leitura dos dados
+
+Os dados utilizados são arquivos *.shp* dos municípios da região sudeste. Vamos construir mapas interativos com informações de população e analfabetismo. Mas existem outras variáveis para brincar, também...
+
+No código abaixo, vamos fazer o download do shape e descompactar os arquivos
+
+```{r, inclue = T,eval = T}
+
+# objeto 'link_download' guarda o endereço dos dados que vamos usar
+link_download <- "https://gitlab.com/Wjsilva/exemplos_r/raw/previa/dados/c10_sudeste.zip"
+
+# criando arquivo e diretórios temporários
+tf <- tempfile()
+td <- tempdir()
+
+# baixando e descompactando
+download.file(link_download,destfile = tf)
+unzip(tf,exdir = td)
+```
+
+Agora, vamos carregar o *shape* usando a função *rgdal::readOGR*. Bastam os argumentos **dsn**, que é a nossa pasta **td**, temporária, e o nome do *shape*, sem o formato. Um plot é realizado apenas para checar se tá tudo certo. A opção *encoding* serve para organizar os caracteres especiais dos nome dos municípios.
+
+
+```{r,echo = T,message = F}
+c10_sudeste <- readOGR(dsn = td, layer = "c10_sudeste",encoding = "UTF-8")
+plot(c10_sudeste)
+```
+
+# Pasos do leaflet R
+
+## O básico
+
+O primeiro passo é chamar o *lefalet* e, opcionalmente, declarar a fonte de dados e outras opções, como largura e comprimento. Isso é feito usando a função*leaflet(data)*. No código abaixo, criamos um *default*. É possível deixar para inserir a fonte de dados posteriormente, em outras etapas. Aqui, vamos "declarar" os municípios do sudeste como fonte de dados. Os nossos municípios ainda não vão aparecer.
+
+```{r, include = T, eval = T}
+mapa <- leaflet(data = c10_sudeste)
+mapa
+```
+
+Ao criar o objeto *mapa*, nada acontece, a não ser a criação deste elemento de classe *`r class(mapa)`*. Quando executamos esse objeto, aparece um "mapa" vazio, apenas com a opção de *zoom*.
+
+## Determinar basemap
+
+O próximo passo, ou "camada", é determinar um *basemap* usando a função *addTiles*. Jà existe um *defaul* pronto, que vai ser mostrado, e outro mais legal que será usado até o fim.
+
+```{r, include = T, eval = F}
+mapa %>% addTiles()
+```
+
+O comando acima equivale exatamente ao comando abaixo (afinal, essa é a funcionalidade do operador "%>%").
+
+```{r, include = T, eval = F}
+addTiles(mapa)
+```
+
+Para ilustrar a flexibilidade de escolha do basemape, vamos utilizar um exemplo utilizado no próprio help da função *leflet()*.
+
+```{r, include = T, eval = T}
+mapa <- leaflet(data = c10_sudeste) %>%
+  addTiles('http://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png',
+           attribution = paste(
+             '&copy; <a href="http://openstreetmap.org">OpenStreetMap</a> contributors',
+             '&copy; <a href="http://cartodb.com/attributions">CartoDB</a>'
+             )
+           )
+mapa
+```
+
+
+## Adicionar polígonos não tematizados
+
+A próxima camada envolve o "desenho" do polígono no basemap. 
+
+```{r, include = T, eval = F}
+mapa %>% addPolygons()
+```
+
+com a opção *weight* podemos diminuir a expessura das linhas. Com *fillColor* mudamos a cor de preenchimento, e *color* muda a cor da linha. Vamos deixar com linhas vermelhas e preenchimento azul A transparência também pode (e será) modificada com *fillOpacity = 0.9*
+
+```{r, include = T, eval = F}
+mapa %>% addPolygons(weight = 1, fillColor = "Blue",
+                                    color = "red",fillOpacity = 0.9)
+```
+
+## Tematizar com base em uma variável
+
+Para ilustrar, vamos fazer um mapa temático da população total (*npes*. Para fazer isso, são necessários dos passos.
+
+1. Criar uma espécie de *função* que criará uma escala de cores em função das classes de valores da variável
+2. "executar" essa função no meio da adição dos polígonos.
+
+```{r,include = T, eval = F}
+blues = colorNumeric("Blues", domain = c10_sudeste$npes)
+mapa %>% addPolygons(weight = 0.1, fillColor = ~blues(npes),
+                     color = "blue",fillOpacity = 0.9,
+                     smoothFactor = 0.5)
+
+## Obs: a opção "smoothFactor" tem a ver com o nível de distorção dos polígonos, causada pela simplificação, com o intuito de otimizar o processamento
+```
+
+Para outro exemplo, usando outro esquema de cores, vamos fazer o mesmo para a taxa de analfabetismo.
+
+
+```{r,include = T, eval = F}
+greens = colorNumeric("Greens", domain = c10_sudeste$tx_analfab)
+mapa2 <- mapa %>% addPolygons(weight = 0.1, fillColor = ~greens(tx_analfab),
+                             color = "green",fillOpacity = 0.9,
+                             smoothFactor = 0.5)
+mapa2
+```
+
+
+## Adicionando legenda e pop-up
+
+Outra opção essencial é a adição de legenda. Isso é feito na camada *addLegend()*. Repare que recriamos o objeto '*mapa*' no objeto *'mapa2'*, que contém o mapa base e os polígonos tematizados. 
+
+A legenda será simplesmente acrescentada a esse objetos no atual status, e será mostrado no canto inferior direito (position = "bottromright"). Usamos a mesma palheta de cores ("função" *greens*) e a mesma variável (values = ~*tx_analfab*).
+
+```{r,include = T, eval = F}
+mapa3 <- mapa2 %>% addLegend(position = "bottomright", pal = greens,values = ~tx_analfab)
+mapa3
+```
+
+Uma última opção interessante é acrescentar *pop-ups* nos polígonos. Isso é feito com base na camada *addPopups*. No nosso caso, vamos mostrar como pop-up o nome do município, seguido de um traço (" - "") e o valor da taxa de analfabetismo. Por enquanto, só consegui adicionar essa opção ao inserir os polígonos (outra alternativa, pois a função *addPolygons* tem a opção *popup*).
+
+Repare que aqui estou recriando tudo do zero. Essa é uma boa oportunidade para entender o *leaflet* como construção de elementos camada a camada. Essa funcionalidade, aliás, é bem semelhante à do ggplot2. Seria possível, por exemplo, acrescentar mais uma camada via *addPolygons* para acrescentar os limites de UF, por exemplo. Ou adicionar outro arquivo com dados pontuais ou de linhas.
+
+```{r,echo = execute_all}
+greens = colorNumeric("Greens", domain = c10_sudeste$tx_analfab)
+mapa %>% 
+  addPolygons(weight = 0.1, fillColor = ~greens(tx_analfab),
+              color = "green",fillOpacity = 0.9,
+              smoothFactor = 0.5,
+              popup = paste0(c10_sudeste$NM_MUNICIP,":  ",
+                             c10_sudeste$tx_analfab)) %>%
+  addLegend(position = "bottomright", pal = greens,values = ~tx_analfab)
+  
+
+```
+
