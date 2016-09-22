@@ -1,6 +1,6 @@
 {
   "name": "Hello website",
   "tagline": "Applyin the 'hello word' of Rmarkdown Website",
-  "body": "# hello_website\r\nApplyin the 'hello word' of Rmarkdown Website\r\n\r\n\r\nVeja o [index](index.html)",
+  "body": "# hello_website\r\nApplying the 'hello word' of Rmarkdown Website\r\n\r\n[Sobre](about.html)\r\n",
   "note": "Don't delete this file! It's used internally to help with page regeneration."
 }
